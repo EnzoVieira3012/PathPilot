@@ -31,3 +31,7 @@ Thumbs.db
 *.db
 .pathpilot/
 PLANO_ACAO.md
+
+# Exports folder (keep folder, ignore contents)
+exports/*
+!exports/.gitkeep
