@@ -3,34 +3,18 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual environments
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.venv/
 venv/
 env/
-ENV/
-.venv/
 
-# Environment variables
-.env
-.env.local
-.env.*.local
+# Distribution
+dist/
+build/
+*.egg-info/
 
 # IDE
 .vscode/
@@ -42,15 +26,8 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
-logs/
-
-# Testing
-.coverage
-htmlcov/
-.pytest_cache/
-.tox/
-
-# Distribution
-*.whl
+# Project specific
+.env
+*.db
+.pathpilot/
+PLANO_ACAO.md
