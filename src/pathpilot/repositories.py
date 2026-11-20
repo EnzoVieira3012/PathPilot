@@ -233,6 +233,7 @@ class BackupRepository(BaseRepository):
             scope=Scope(row["scope"]),
             path_snapshot=json.loads(row["path_snapshot"]),
             description=row["description"] or "",
+            checksum=row["checksum"] or "",
             created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
         )
 
