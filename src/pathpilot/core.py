@@ -1,15 +1,10 @@
-"""Serviço principal - lógica de negócio."""
+"""Servico principal - logica de negocio."""
 
 from dataclasses import dataclass
 
 from .models import OperationStatus, OperationType, PathEntry, Scope, SyncResult, ValidationResult
 from .repositories import BackupRepository, OperationLogRepository, PathEntryRepository
-from .utils import (
-    is_valid_path,
-    normalize_path,
-    path_exists,
-    print_warning,
-)
+from .utils import is_valid_path, normalize_path, path_exists, print_warning
 from .windows_api import WindowsPathAPI
 
 
@@ -21,7 +16,7 @@ class OperationResult:
 
 
 class PathService:
-    """Serviço de operações no PATH."""
+    """Servico de operacoes no PATH."""
 
     def __init__(self):
         self.path_repo = PathEntryRepository()
@@ -32,25 +27,25 @@ class PathService:
     def list_paths(self, scope: Scope, active_only: bool = True) -> list[PathEntry]:
         return self.path_repo.get_all(scope, active_only)
 
-    def add_path(self, path: str, scope: Scope, description: str = '') -> OperationResult:
+    def add_path(self, path: str, scope: Scope, description: str = "") -> OperationResult:
         path = normalize_path(path)
 
         if not is_valid_path(path):
-            return OperationResult(False, f'Path inválido: {path}')
+            return OperationResult(False, f"Path invalido: {path}")
 
         if not path_exists(path):
-            print_warning(f'Path não existe no filesystem: {path}')
+            print_warning(f"Path nao existe no filesystem: {path}")
 
         existing = self.path_repo.get_by_path(path, scope)
         if existing:
             if existing.active:
-                return OperationResult(False, f'Path já existe e está ativo: {path}')
+                return OperationResult(False, f"Path ja existe e esta ativo: {path}")
             else:
                 self.path_repo.set_active(path, scope, True)
-                self._log(OperationType.ADD, scope, path, OperationStatus.SUCCESS, 'Reativado')
-                return OperationResult(True, f'Path reativado: {path}', existing)
+                self._log(OperationType.ADD, scope, path, OperationStatus.SUCCESS, "Reativado")
+                return OperationResult(True, f"Path reativado: {path}", existing)
 
-        # Pega position máxima
+        # Pega position maxima
         entries = self.path_repo.get_all(scope, active_only=False)
         max_pos = max((e.position for e in entries), default=-1)
 
@@ -65,22 +60,22 @@ class PathService:
 
         self._sync_to_windows(scope)
         self._log(OperationType.ADD, scope, path, OperationStatus.SUCCESS)
-        return OperationResult(True, f'Path adicionado: {path}', entry)
+        return OperationResult(True, f"Path adicionado: {path}", entry)
 
     def remove_path(self, path: str, scope: Scope) -> OperationResult:
         path = normalize_path(path)
 
         existing = self.path_repo.get_by_path(path, scope)
         if not existing:
-            return OperationResult(False, f'Path não encontrado: {path}')
+            return OperationResult(False, f"Path nao encontrado: {path}")
 
         if not existing.active:
-            return OperationResult(False, f'Path já está inativo: {path}')
+            return OperationResult(False, f"Path ja esta inativo: {path}")
 
         self.path_repo.set_active(path, scope, False)
         self._sync_to_windows(scope)
         self._log(OperationType.REMOVE, scope, path, OperationStatus.SUCCESS)
-        return OperationResult(True, f'Path removido (desativado): {path}')
+        return OperationResult(True, f"Path removido (desativado): {path}")
 
     def validate_paths(self, scope: Scope) -> ValidationResult:
         entries = self.path_repo.get_all(scope, active_only=True)
@@ -99,7 +94,7 @@ class PathService:
             else:
                 result.missing.append(entry.path)
 
-        # Verifica inválidos (caracteres, etc)
+        # Verifica invalidos (caracteres, etc)
         for entry in entries:
             if not is_valid_path(entry.path):
                 result.invalid.append(entry.path)
@@ -125,9 +120,10 @@ class PathService:
             else:
                 result.unchanged.append(spath)
 
-        # Paths no DB mas não no Windows
+        # Paths no DB mas nao no Windows
+        sys_paths_norm = {normalize_path(p) for p in system_paths}
         for entry in db_entries:
-            if normalize_path(entry.path) not in {normalize_path(p) for p in system_paths}:
+            if normalize_path(entry.path) not in sys_paths_norm:
                 if entry.active:
                     self.path_repo.set_active(entry.path, scope, False)
                     result.removed.append(entry.path)
@@ -144,17 +140,8 @@ class PathService:
         paths = [e.path for e in entries]
         self.win_api.set_path(scope, paths)
 
-    def _log(
-        self,
-        op: OperationType,
-        scope: Scope,
-        target: str,
-        status: OperationStatus,
-        error: str = '',
-        metadata: dict = None,
-    ):
+    def _log(self, op: OperationType, scope: Scope, target: str, status: OperationStatus, error: str = "", metadata: dict = None):
         from .models import OperationLog
-
         log = OperationLog(
             operation=op,
             scope=scope,
