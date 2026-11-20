@@ -4,6 +4,7 @@ import hashlib
 import json
 from datetime import datetime
 
+from .crypto import get_crypto
 from .db import get_db
 from .models import Backup, EnvVar, OperationLog, OperationStatus, OperationType, PathEntry, Scope
 from .utils import normalize_path, path_exists
@@ -148,11 +149,22 @@ class PathEntryRepository(BaseRepository):
 
 
 class EnvVarRepository(BaseRepository):
+    def __init__(self):
+        super().__init__()
+        self._crypto = get_crypto()
+
     def _row_to_envvar(self, row) -> EnvVar:
+        value = row["value"]
+        if row["encrypted"] and value:
+            try:
+                value = self._crypto.decrypt(value)
+            except Exception:
+                value = f"[DECRYPT ERROR: {value[:20]}...]"
+
         return EnvVar(
             id=row["id"],
             name=row["name"],
-            value=row["value"],
+            value=value,
             scope=Scope(row["scope"]),
             description=row["description"] or "",
             encrypted=bool(row["encrypted"]),
@@ -186,14 +198,23 @@ class EnvVarRepository(BaseRepository):
         )
         return self._row_to_envvar(row) if row else None
 
+    def _encrypt_if_needed(self, value: str, encrypted: bool) -> str:
+        """Criptografa valor se encrypted=True."""
+        if encrypted and value:
+            return self._crypto.encrypt(value)
+        return value
+
     def create(self, env_var: EnvVar) -> EnvVar:
         self._validate_name(env_var.name, env_var.scope)
+
+        # Criptografa se necessario
+        stored_value = self._encrypt_if_needed(env_var.value, env_var.encrypted)
 
         with self.db.transaction() as conn:
             cursor = conn.execute(
                 """INSERT INTO env_vars (name, value, scope, description, encrypted)
                    VALUES (?, ?, ?, ?, ?)""",
-                (env_var.name, env_var.value, env_var.scope.value, env_var.description, env_var.encrypted)
+                (env_var.name, stored_value, env_var.scope.value, env_var.description, env_var.encrypted)
             )
             env_var.id = cursor.lastrowid
         return env_var
@@ -201,11 +222,14 @@ class EnvVarRepository(BaseRepository):
     def update(self, env_var: EnvVar) -> EnvVar:
         self._validate_name(env_var.name, env_var.scope, exclude_id=env_var.id)
 
+        # Criptografa se necessario
+        stored_value = self._encrypt_if_needed(env_var.value, env_var.encrypted)
+
         with self.db.transaction() as conn:
             conn.execute(
                 """UPDATE env_vars SET value=?, description=?, encrypted=?,
                    updated_at=CURRENT_TIMESTAMP WHERE id=?""",
-                (env_var.value, env_var.description, env_var.encrypted, env_var.id)
+                (stored_value, env_var.description, env_var.encrypted, env_var.id)
             )
         return env_var
 
@@ -304,6 +328,10 @@ class BackupRepository(BaseRepository):
 
 
 class OperationLogRepository(BaseRepository):
+    def __init__(self):
+        super().__init__()
+        self._crypto = get_crypto()
+
     def _row_to_log(self, row) -> OperationLog:
         return OperationLog(
             id=row["id"],
@@ -316,9 +344,19 @@ class OperationLogRepository(BaseRepository):
             created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
         )
 
+    def _compute_hmac(self, log: OperationLog) -> str:
+        """Computa HMAC do log para integridade."""
+        data = f"{log.operation.value}|{log.scope.value if log.scope else ''}|{log.target_path}|{log.status.value}|{log.error_message}|{json.dumps(log.metadata)}"
+        return self._crypto.sign(data)
+
     def log(self, log: OperationLog) -> OperationLog:
         if not log.target_path and log.operation in (OperationType.ADD, OperationType.REMOVE):
             raise ValidationError("target_path obrigatorio para ADD/REMOVE")
+
+        # Adiciona HMAC ao metadata
+        if log.metadata is None:
+            log.metadata = {}
+        log.metadata["_hmac"] = self._compute_hmac(log)
 
         with self.db.transaction() as conn:
             cursor = conn.execute(
@@ -329,6 +367,14 @@ class OperationLogRepository(BaseRepository):
             )
             log.id = cursor.lastrowid
         return log
+
+    def verify_log_integrity(self, log: OperationLog) -> bool:
+        """Verifica integridade do log via HMAC."""
+        stored_hmac = log.metadata.get("_hmac") if log.metadata else None
+        if not stored_hmac:
+            return False
+        computed = self._compute_hmac(log)
+        return self._crypto.verify(computed, stored_hmac)
 
     def get_recent(self, limit: int = 100) -> list[OperationLog]:
         rows = self.db.fetchall(

@@ -149,6 +149,54 @@ pathpilot log-verify
 pathpilot interactive
 ```
 
+## 🧪 Testes
+
+```bash
+# Roda todos os testes
+pytest tests/ -v
+
+# Com coverage
+pytest tests/ --cov=pathpilot --cov-report=term-missing
+
+# Apenas testes unitários (sem CLI)
+pytest tests/test_models.py tests/test_utils.py tests/test_crypto.py tests/test_db.py tests/test_repositories.py tests/test_core.py tests/test_migrations.py tests/test_windows_api.py tests/test_config.py -v
+
+# Testes de CLI
+pytest tests/test_cli.py -v
+```
+
+### Estrutura dos Testes
+
+| Arquivo | Cobertura |
+|---------|-----------|
+| `test_models.py` | Dataclasses/enums (Scope, PathEntry, EnvVar, Backup, OperationLog, ValidationResult, etc.) |
+| `test_utils.py` | `normalize_path`, `is_valid_path`, `path_exists`, `expand_path`, `sanitize_path`, `safe_join`, `validate_env_var`, `split_path`, `join_path`, `confirm_action` |
+| `test_crypto.py` | `CryptoService` (Fernet encrypt/decrypt, SHA-256, HMAC sign/verify) |
+| `test_db.py` | Database singleton, health_check, schema_version, stats, transactions |
+| `test_repositories.py` | `PathEntryRepository`, `EnvVarRepository`, `BackupRepository`, `OperationLogRepository`, `UserSettingsRepository` |
+| `test_core.py` | `PathService` & `BackupService` (list, add, remove, bulk, reorder, import/export, sync, validate, backup, restore) |
+| `test_cli.py` | CLI commands via Typer runner + direct service tests |
+| `test_migrations.py` | 5 versioned migrations, seed data, triggers, indexes |
+| `test_windows_api.py` | `WindowsPathAPI` (registry read/write, broadcast) |
+| `test_config.py` | Settings model validation |
+
+### Fixtures
+
+- `mock_db` - Banco SQLite temporário com migrações aplicadas (fixture principal)
+- `temp_db_path` - Path temporário para arquivo .db
+- `sample_paths` / `sample_env_vars` - Dados de exemplo
+
+```python
+# Exemplo de uso da fixture mock_db
+def test_meu_teste(mock_db):
+    from pathpilot.core import PathService
+    from pathpilot.models import Scope, PathEntry
+    
+    service = PathService()
+    service.path_repo.create(PathEntry(path=r"C:\Teste", scope=Scope.USER))
+    # ...
+```
+
 ## 🏗️ Arquitetura
 
 ```
