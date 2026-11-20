@@ -317,7 +317,7 @@ pytest tests/test_cli.py -v
 **Enzo Vieira**
 - GitHub: [@EnzoVieira3012](https://github.com/EnzoVieira3012)
 - LinkedIn: [enzovieira3012](https://www.linkedin.com/in/enzovieira3012/)
-- Email: enzovieira3012@gmail.com
+- Email: enzovieira.trabalho@outlook.com
 
 ## 📄 Licença
 
