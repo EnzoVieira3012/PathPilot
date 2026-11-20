@@ -1,0 +1,251 @@
+.TH PATHPILOT 1 "January 2025" "PathPilot 0.6.0" "User Commands"
+.SH NAME
+pathpilot \- Gerencie seu PATH do Windows com estilo
+.SH SYNOPSIS
+.B pathpilot
+[\fIOPTIONS\fR] \fICOMMAND\fR [\fIARGS\fR]...
+.SH DESCRIPTION
+.PP
+PathPilot é uma CLI moderna para gerenciar o PATH do Windows (usuário e sistema).
+Construída com \fBTyper\fR, \fBRich\fR e \fBQuestionary\fR para uma experiência
+bonita, responsiva e interativa.
+.PP
+Recursos principais:
+.IP \(bu 2
+Listar, adicionar, remover, reordenar e priorizar entradas PATH
+.IP \(bu 2
+Operações em lote (bulk add/remove)
+.IP \(bu 2
+Import/Export JSON e CSV
+.IP \(bu 2
+Backup & Restore com checksum SHA-256
+.IP \(bu 2
+Variáveis de ambiente com criptografia Fernet (AES-128-CBC + HMAC)
+.IP \(bu 2
+Auditoria completa com assinatura HMAC-SHA256
+.IP \(bu 2
+Database SQLite com WAL mode e migrações versionadas
+.IP \(bu 2
+Modo interativo TUI
+.SH OPTIONS
+.TP
+\fB--help\fR
+Mostra ajuda e sai
+.TP
+\fB--version\fR
+Mostra versão e sai
+.TP
+\fB--scope\fR \fIUSER|SYSTEM\fR
+Escopo da operação (padrão: user). SYSTEM requer Administrador.
+.SH COMMANDS
+.SS PATH MANAGEMENT
+.TP
+\fBlist\fR [\fB--scope\fR SCOPE] [\fB--active-only\fR] [\fB--format\fR FMT]
+Lista entradas PATH. FMT: table, json, csv
+.TP
+\fBadd\fR \fIPATH\fR [\fB--scope\fR SCOPE] [\fB--desc\fR DESC] [\fB--position\fR N]
+Adiciona entrada PATH. Reativa se inativa.
+.TP
+\fBremove\fR \fIPATH\fR [\fB--scope\fR SCOPE]
+Remove (desativa) entrada PATH
+.TP
+\fBreorder\fR \fIPATH\fR \fB--direction\fR UP|DOWN [\fB--scope\fR SCOPE]
+Move PATH uma posição para cima/baixo
+.TP
+\fBmove-to\fR \fIPATH\fR \fIPOSITION\fR [\fB--scope\fR SCOPE]
+Move PATH para posição absoluta
+.TP
+\fBprioritize\fR \fB--paths\fR "A,B,C" [\fB--scope\fR SCOPE]
+Define ordem de prioridade para múltiplos PATHs
+.TP
+\fBadd-bulk\fR \fB--paths\fR "A,B,C" [\fB--scope\fR SCOPE]
+Adiciona múltiplos PATHs de uma vez
+.TP
+\fBremove-bulk\fR \fB--paths\fR "A,B,C" [\fB--scope\fR SCOPE]
+Remove múltiplos PATHs de uma vez
+.SS VALIDATION & SYNC
+.TP
+\fBvalidate\fR [\fB--scope\fR SCOPE]
+Validação simples (existência, duplicados)
+.TP
+\fBvalidate-detailed\fR [\fB--scope\fR SCOPE]
+Validação detalhada (válidos, faltando, inválidos, duplicados)
+.TP
+\fBexpand-vars\fR [\fB--scope\fR SCOPE]
+Expande %VAR% no database para valores reais
+.TP
+\fBsync\fR [\fB--scope\fR SCOPE] [\fB--dry-run\fR]
+Sincroniza database com Windows PATH
+.TP
+\fBsync-conflicts\fR [\fB--strategy\fR STRAT] [\fB--scope\fR SCOPE]
+Resolve conflitos avançados. STRAT: keep_db, keep_win, merge
+.SS IMPORT/EXPORT
+.TP
+\fBexport\fR \fIFILE\fR [\fB--scope\fR SCOPE] [\fB--format\fR FMT]
+Exporta PATHs para JSON ou CSV
+.TP
+\fBimport-cmd\fR \fIFILE\fR [\fB--scope\fR SCOPE] [\fB--dry-run\fR]
+Importa PATHs de JSON
+.SS BACKUP & RESTORE
+.TP
+\fBbackup\fR \fINAME\fR [\fB--scope\fR SCOPE] [\fB--desc\fR DESC]
+Cria backup snapshot do PATH
+.TP
+\fBbackups\fR [\fB--scope\fR SCOPE]
+Lista backups disponíveis
+.TP
+\fBbackup-verify\fR \fIID\fR [\fB--scope\fR SCOPE]
+Verifica integridade (checksum SHA-256)
+.TP
+\fBrestore\fR \fIID\fR [\fB--merge\fR|\fB--full\fR] [\fB--scope\fR SCOPE] [\fB--dry-run\fR]
+Restaura backup. \fB--merge\fR adiciona faltando; \fB--full\fR substitui tudo
+.TP
+\fBbackup-schedule\fR [\fB--enable\fR|\fB--disable\fR] [\fB--interval\fR H] [\fB--max-backups\fR N] [\fB--scope\fR SCOPE]
+Agenda backups automáticos
+.TP
+\fBbackup-cleanup\fR [\fB--max-backups\fR N] [\fB--max-age-days\fR D] [\fB--scope\fR SCOPE] [\fB--dry-run\fR]
+Remove backups antigos
+.SS ENVIRONMENT VARIABLES
+.TP
+\fBenv-add\fR \fINAME\fR \fIVALUE\fR [\fB--scope\fR SCOPE] [\fB--encrypt\fR] [\fB--desc\fR DESC]
+Adiciona variável. \fB--encrypt\fR usa Fernet
+.TP
+\fBenv-get\fR \fINAME\fR [\fB--scope\fR SCOPE] [\fB--show\fR]
+Obtém valor. \fB--show\fR descriptografa
+.TP
+\fBenv-list\fR [\fB--scope\fR SCOPE] [\fB--encrypted-only\fR]
+Lista variáveis
+.TP
+\fBenv-encrypt\fR \fINAME\fR [\fB--scope\fR SCOPE]
+Criptografa variável existente
+.TP
+\fBenv-decrypt\fR \fINAME\fR [\fB--scope\fR SCOPE]
+Descriptografa (remove flag encrypted)
+.TP
+\fBcrypto-keygen\fR
+Gera chave Fernet base64 para \fBPATHPILOT_FERNET_KEY\fR
+.SS DATABASE & AUDIT
+.TP
+\fBdb-stats\fR
+Estatísticas do banco SQLite
+.TP
+\fBmigrate\fR
+Aplica migrações pendentes
+.TP
+\fBhistory\fR [\fB--limit\fR N] [\fB--scope\fR SCOPE]
+Histórico de operações
+.TP
+\fBlog-verify\fR
+Verifica integridade HMAC dos logs
+.SS INTERACTIVE & CONFIG
+.TP
+\fBinteractive\fR
+Modo TUI interativo completo
+.TP
+\fBconfig\fR \fBSHOW|SET|GET\fR [\fIKEY\fR] [\fIVALUE\fR]
+Gerencia configurações persistentes
+.SH CONFIGURATION
+.PP
+Configuração via arquivo \fB.env\fR ou variáveis de ambiente:
+.TP
+\fBPATHPILOT_DB_PATH\fR
+Caminho do banco SQLite (padrão: %USERPROFILE%\.pathpilot\pathpilot.db)
+.TP
+\fBPATHPILOT_FERNET_KEY\fR
+Chave Fernet base64 32 bytes (obrigatório para criptografia)
+.TP
+\fBPATHPILOT_HMAC_KEY\fR
+Chave HMAC para assinatura logs (obrigatório)
+.TP
+\fBPATHPILOT_DEFAULT_SCOPE\fR
+user|system (padrão: user)
+.TP
+\fBPATHPILOT_AUTO_BACKUP\fR
+true|false (padrão: false)
+.TP
+\fBPATHPILOT_CONFIRM_DESTRUCTIVE\fR
+true|false (padrão: true)
+.TP
+\fBPATHPILOT_THEME\fR
+default|dark|light (padrão: default)
+.TP
+\fBPATHPILOT_SHOW_PROGRESS\fR
+true|false (padrão: true)
+.TP
+\fBPATHPILOT_USE_EMOJI\fR
+true|false (padrão: true)
+.SH EXAMPLES
+.PP
+Setup inicial:
+.nf
+    pathpilot crypto-keygen
+    # Copia chave para .env
+    pathpilot backup "estado-original" --scope user
+    pathpilot add-bulk --paths "C:\\Python311,C:\\Python311\\Scripts" --scope user
+    pathpilot prioritize --paths "C:\\Python311,C:\\Python311\\Scripts" --scope user
+.fi
+.PP
+Backup & Restore:
+.nf
+    pathpilot backup "antes-atualizacao" --scope user
+    pathpilot restore 5 --merge --scope user --dry-run
+    pathpilot restore 5 --merge --scope user
+.fi
+.PP
+Variáveis criptografadas:
+.nf
+    pathpilot env-add API_TOKEN "ghp_xxx" --scope user --encrypt
+    pathpilot env-get API_TOKEN --scope user --show
+    pathpilot log-verify
+.fi
+.PP
+Modo interativo:
+.nf
+    pathpilot interactive
+.fi
+.SH FILES
+.TP
+\fI%USERPROFILE%\\.pathpilot\\pathpilot.db\fR
+Banco SQLite principal
+.TP
+\fI%USERPROFILE%\\.pathpilot\\pathpilot.db-wal\fR
+Write-Ahead Log (WAL mode)
+.TP
+\fI%USERPROFILE%\\.pathpilot\\pathpilot.db-shm\fR
+Shared Memory (WAL mode)
+.TP
+\fI.env\fR
+Configuração local (gitignored)
+.SH ENVIRONMENT
+.TP
+\fBPATHPILOT_DB_PATH\fR
+Sobrescreve localização do banco
+.TP
+\fBPATHPILOT_FERNET_KEY\fR
+Chave criptografia (gerada via \fBcrypto-keygen\fR)
+.TP
+\fBPATHPILOT_HMAC_KEY\fR
+Chave assinatura HMAC logs
+.SH EXIT STATUS
+.TP
+\fB0\fR
+Sucesso
+.TP
+\fB1\fR
+Erro geral
+.TP
+\fB2\fR
+Erro de uso/argumentos
+.TP
+\fB130\fR
+Interrompido por usuário (Ctrl+C)
+.SH AUTHOR
+Enzo Vieira <enzovieira3012@gmail.com>
+.br
+GitHub: https://github.com/EnzoVieira3012
+.br
+LinkedIn: https://www.linkedin.com/in/enzovieira3012/
+.SH SEE ALSO
+.BR pathpilot-interactive (1),
+.BR pathpilot-config (1),
+Documentação completa: https://enzovieira3012.github.io/PathPilot/
