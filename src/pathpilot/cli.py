@@ -744,6 +744,159 @@ def backup_auto(
     print_success(f"Auto-backup {'ativado' if enable else 'desativado'}")
 
 
+# ==================== ENCRYPTED ENV VARS ====================
+
+@app.command()
+def env_add(
+    name: str = typer.Argument(..., help="Nome da variavel"),
+    value: str = typer.Argument(..., help="Valor da variavel"),
+    scope: str = typer.Option("user", "--scope", "-s", help="Escopo: user|system"),
+    desc: str = typer.Option("", "--desc", "-d", help="Descricao"),
+    encrypt: bool = typer.Option(False, "--encrypt", "-e", help="Criptografar valor"),
+):
+    """Adiciona variavel de ambiente (opcionalmente criptografada)"""
+    from .repositories import EnvVarRepository
+    from .models import EnvVar, Scope
+
+    sc = Scope(scope)
+
+    if require_admin(sc):
+        print_error("Escopo 'system' requer admin")
+        raise typer.Exit(1)
+
+    repo = EnvVarRepository()
+    env_var = EnvVar(name=name, value=value, scope=sc, description=desc, encrypted=encrypt)
+    repo.create(env_var)
+
+    status = "[green]criptografado[/]" if encrypt else "[yellow]em texto[/]"
+    print_success(f"Variavel '{name}' adicionada ao {sc.label} ({status})")
+
+
+@app.command()
+def env_get(
+    name: str = typer.Argument(..., help="Nome da variavel"),
+    scope: str = typer.Option("user", "--scope", "-s", help="Escopo: user|system"),
+    show_encrypted: bool = typer.Option(False, "--show", help="Mostra valor descriptografado"),
+):
+    """Obtem valor de variavel de ambiente"""
+    from .repositories import EnvVarRepository
+    from .models import Scope
+
+    sc = Scope(scope)
+    repo = EnvVarRepository()
+
+    env_var = repo.get_by_name(name, sc)
+    if not env_var:
+        print_error(f"Variavel '{name}' nao encontrada em {sc.label}")
+        raise typer.Exit(1)
+
+    if env_var.encrypted and not show_encrypted:
+        print_info(f"{name} = [red]<criptografado> (use --show para ver)[/]")
+    else:
+        console.print(f"{name} = [green]{env_var.value}[/]")
+
+
+@app.command()
+def env_list(
+    scope: str = typer.Option("both", "--scope", "-s", help="Escopo: user|system|both"),
+    show_encrypted: bool = typer.Option(False, "--show", help="Mostra valores criptografados"),
+    only_encrypted: bool = typer.Option(False, "--encrypted-only", help="So criptografadas"),
+):
+    """Lista variaveis de ambiente"""
+    from .repositories import EnvVarRepository
+    from .models import Scope
+
+    scopes = [Scope.USER, Scope.SYSTEM] if scope == "both" else [Scope(scope)]
+    repo = EnvVarRepository()
+
+    for sc in scopes:
+        vars = repo.get_all(sc)
+
+        if only_encrypted:
+            vars = [v for v in vars if v.encrypted]
+
+        if not vars:
+            console.print(f"[{sc.label}] Nenhuma variavel")
+            continue
+
+        table = Table(title=f"Env Vars - {sc.label}", show_header=True, header_style="bold cyan")
+        table.add_column("Nome", style="cyan")
+        table.add_column("Valor", style="green", overflow="fold")
+        table.add_column("Criptografada", justify="center")
+        table.add_column("Descricao", style="dim")
+
+        for v in vars:
+            value_display = v.value
+            if v.encrypted and not show_encrypted:
+                value_display = "[red]<criptografado>[/]"
+            enc_status = "[green]SIM[/]" if v.encrypted else "[dim]NAO[/]"
+            table.add_row(v.name, value_display, enc_status, v.description or "-")
+
+        console.print(table)
+
+
+@app.command()
+def env_encrypt(
+    name: str = typer.Argument(..., help="Nome da variavel"),
+    scope: str = typer.Option("user", "--scope", "-s", help="Escopo: user|system"),
+):
+    """Criptografa variavel existente"""
+    from .repositories import EnvVarRepository
+    from .models import Scope
+
+    sc = Scope(scope)
+    repo = EnvVarRepository()
+
+    env_var = repo.get_by_name(name, sc)
+    if not env_var:
+        print_error(f"Variavel '{name}' nao encontrada")
+        raise typer.Exit(1)
+
+    if env_var.encrypted:
+        print_warning(f"Variavel '{name}' ja esta criptografada")
+        raise typer.Exit(1)
+
+    env_var.encrypted = True
+    repo.update(env_var)
+    print_success(f"Variavel '{name}' criptografada")
+
+
+@app.command()
+def env_decrypt(
+    name: str = typer.Argument(..., help="Nome da variavel"),
+    scope: str = typer.Option("user", "--scope", "-s", help="Escopo: user|system"),
+):
+    """Remove criptografia de variavel"""
+    from .repositories import EnvVarRepository
+    from .models import Scope
+
+    sc = Scope(scope)
+    repo = EnvVarRepository()
+
+    env_var = repo.get_by_name(name, sc)
+    if not env_var:
+        print_error(f"Variavel '{name}' nao encontrada")
+        raise typer.Exit(1)
+
+    if not env_var.encrypted:
+        print_warning(f"Variavel '{name}' nao esta criptografada")
+        raise typer.Exit(1)
+
+    env_var.encrypted = False
+    repo.update(env_var)
+    print_success(f"Variavel '{name}' descriptografada (agora em texto)")
+
+
+@app.command()
+def crypto_keygen():
+    """Gera nova chave Fernet para .env"""
+    from .crypto import CryptoService
+    key = CryptoService.generate_key()
+    console.print(f"[bold]Nova chave Fernet:[/] [green]{key}[/]")
+    console.print("\nAdicione ao .env:")
+    console.print(f"  FERNET_KEY={key}")
+
+
 @app.command()
 def history(
     limit: int = typer.Option(20, "--limit", "-n", help="Numero de entradas"),
