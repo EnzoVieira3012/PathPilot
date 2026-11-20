@@ -1,0 +1,147 @@
+site_name: PathPilot
+site_description: Gerencie seu PATH do Windows com estilo - CLI moderna com Typer + Rich + Questionary
+site_author: Enzo Vieira
+site_url: https://enzovieira3012.github.io/PathPilot/
+repo_name: EnzoVieira3012/PathPilot
+repo_url: https://github.com/EnzoVieira3012/PathPilot
+edit_uri: edit/main/docs/
+copyright: "Copyright &copy; 2024 Enzo Vieira"
+
+theme:
+  name: material
+  language: pt-BR
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Modo escuro
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Modo claro
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search:
+      lang: pt
+  - git-revision-date-localized:
+      type: date
+      locale: pt-BR
+  - git-authors:
+      contributors_per_page: 20
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            merge_init_into_class: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+nav:
+  - Início: index.md
+  - Instalação: install.md
+  - Configuração: config.md
+  - Uso:
+    - Visão Geral: usage/overview.md
+    - PATH: usage/path.md
+    - Backup/Restore: usage/backup.md
+    - Variáveis de Ambiente: usage/env.md
+    - Database: usage/database.md
+    - Modo Interativo: usage/interactive.md
+  - Referência da API:
+    - Visão Geral: api/overview.md
+    - CLI: api/cli.md
+    - Core: api/core.md
+    - Models: api/models.md
+    - Database: api/database.md
+    - Repositories: api/repositories.md
+    - Crypto: api/crypto.md
+    - Windows API: api/windows_api.md
+    - Utils: api/utils.md
+    - Config: api/config.md
+  - Desenvolvimento:
+    - Contribuindo: dev/contributing.md
+    - Testes: dev/testing.md
+    - Lint & Type Check: dev/linting.md
+    - Build & Release: dev/release.md
+  - Arquitetura: architecture.md
+  - Segurança: security.md
+  - Changelog: CHANGELOG.md
+  - Licença: license.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/EnzoVieira3012
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/in/enzovieira3012/
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pathpilot/
+  analytics:
+    provider: google
+    property: G-XXXXXXXXXX
+  consent:
+    title: Cookies
+    description: >-
+      Usamos cookies para reconhecer suas visitas e preferências repetidas, assim como
+      para medir a eficácia da nossa documentação e se os usuários encontram o que
+      estão procurando. Com seu consentimento, você nos ajuda a melhorar a documentação.
+    actions:
+      - accept
+      - reject

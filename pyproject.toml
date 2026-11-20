@@ -1,95 +1,182 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pathpilot"
-version = "0.1.0"
-description = "🎯 PathPilot - Gerencie seu PATH do Windows com estilo"
+version = "0.6.0"
+description = "Gerencie seu PATH do Windows com estilo - CLI moderna com Typer + Rich + Questionary"
 readme = "README.md"
-requires-python = ">=3.10"
 license = {text = "MIT"}
-authors = [{name = "Enzo", email = "enzov@example.com"}]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Environment :: Console",
-    "Intended Audience :: Developers",
-    "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: Microsoft :: Windows",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: System :: Shells",
-    "Topic :: Utilities",
+requires-python = ">=3.11"
+authors = [
+  {name = "Enzo Vieira", email = "enzovieira.trabalho@outlook.com"}
 ]
+maintainers = [
+  {name = "Enzo Vieira", email = "enzovieira.trabalho@outlook.com"}
+]
+keywords = [
+  "path", "environment", "windows", "cli", "typer", "rich", "questionary",
+  "path-management", "environment-variables", "backup", "restore"
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: System :: Systems Administration",
+  "Topic :: Utilities",
+]
+[project.urls]
+Homepage = "https://github.com/EnzoVieira3012/PathPilot"
+Repository = "https://github.com/EnzoVieira3012/PathPilot"
+Issues = "https://github.com/EnzoVieira3012/PathPilot/issues"
+Documentation = "https://enzovieira3012.github.io/PathPilot/"
+Changelog = "https://github.com/EnzoVieira3012/PathPilot/blob/main/CHANGELOG.md"
 dependencies = [
-    "typer[all]>=0.12",
-    "rich>=13.7",
-    "questionary>=2.0",
-    "pydantic>=2.7",
-    "pydantic-settings>=2.3",
-    "cryptography>=42.0",
-    "colorama>=0.4.6",
+  "typer[all]>=0.12.0",
+  "rich>=13.7.0",
+  "questionary>=2.0.1",
+  "pydantic>=2.7.0",
+  "pydantic-settings>=2.3.0",
+  "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.2",
-    "pytest-cov>=5.0",
-    "ruff>=0.5",
-    "mypy>=1.10",
-    "pre-commit>=3.6",
+  "pytest>=8.2.0",
+  "pytest-cov>=5.0.0",
+  "ruff>=0.5.0",
+  "mypy>=1.10.0",
+  "pre-commit>=3.7.0",
+  "types-setuptools>=69.0.0",
+]
+docs = [
+  "mkdocs-material>=9.5.0",
+  "mkdocstrings[python]>=0.25.0",
+  "mkdocs-git-revision-date-localized-plugin>=1.4.0",
+  "mkdocs-git-authors-plugin>=0.8.0",
+]
+build = [
+  "build>=1.2.0",
+  "twine>=5.0.0",
 ]
 
 [project.scripts]
+pathpilot = "pathpilot.__main__:main"
+
+[project.entry-points."typer_commands"]
 pathpilot = "pathpilot.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["pathpilot*"]
+
+[tool.setuptools.package-data]
+"*" = ["py.typed"]
 
 [tool.ruff]
-target-version = "py310"
-line-length = 200
-select = ["E", "F", "I", "W", "UP", "B", "C4", "SIM", "T20"]
-ignore = ["S101", "S110"]
-fix = true
-format.quote-style = "single"
-format.indent-style = "space"
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+exclude = [".git", "__pycache__", ".venv", "venv", "dist", "build", "*.egg-info"]
 
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101"]
-"src/pathpilot/cli.py" = ["E731", "E701"]
-"src/pathpilot/core.py" = ["F841"]
-"src/pathpilot/repositories.py" = ["E711"]
-"src/pathpilot/migrations.py" = ["E722"]
-"src/pathpilot/windows_api.py" = ["F841"]
+[tool.ruff.lint]
+select = [
+  "E", "F", "I", "W", "UP", "B", "C4", "DTZ", "T10", "T20", "PTH", "PD", "PGH", "PL", "TRY", "SIM", "NPY", "RSE", "RET", "ERA", "PD", "ARG", "PTH", "TID", "PIE", "TCH", "NPY", "INP", "ISC", "ICN", "PT", "FLY", "QF", "TID"
+]
+ignore = [
+  "E501", "SIM102", "SIM103", "T201", "T203", "PD011", "ARG001", "ARG002", "TRY003", "PTH118", "PTH123"
+]
+preview = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+indent-width = 4
+line-ending = "lf"
+docstring-code-format = true
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 check_untyped_defs = true
+no_implicit_optional = true
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+plugins = ["pydantic.mypy"]
+exclude = ["tests", ".venv", "venv", "dist", "build"]
+
+[[tool.mypy.overrides]]
+module = "pathpilot.*"
 strict = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+strict = false
+disallow_untyped_defs = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short --strict-markers"
+addopts = "-v --tb=short --strict-markers --strict-config"
+markers = [
+  "unit: Unit tests",
+  "integration: Integration tests",
+  "cli: CLI tests",
+  "slow: Slow tests",
+  "windows: Windows-specific tests",
+]
+filterwarnings = [
+  "ignore::DeprecationWarning",
+  "ignore::PendingDeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["src/pathpilot"]
-branch = true
+omit = ["tests/*", "*/__pycache__/*", "*/migrations/*"]
 
 [tool.coverage.report]
 exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
+  "pragma: no cover",
+  "def __repr__",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
 ]
+
+[[tool.pre-commit-hooks]]
+id = "ruff-check"
+name = "ruff-check"
+entry = "ruff check"
+language = "system"
+types = ["python"]
+args = ["--fix"]
+
+[[tool.pre-commit-hooks]]
+id = "ruff-format"
+name = "ruff-format"
+entry = "ruff format"
+language = "system"
+types = ["python"]
+
+[[tool.pre-commit-hooks]]
+id = "mypy"
+name = "mypy"
+entry = "mypy src/pathpilot"
+language = "system"
+types = ["python"]
+require_serial = true

@@ -69,6 +69,60 @@ def join_path(paths: list[str]) -> str:
     return sep.join(paths)
 
 
+# ==================== SECURITY / SANITIZATION ====================
+
+def sanitize_path(path: str) -> str:
+    """Sanitiza path contra path traversal e injection."""
+    if not path:
+        return ""
+
+    # Remove caracteres perigosos
+    dangerous = ["..", "|", "&", ";", "$(", "`", ">", "<", "||", "&&"]
+    for d in dangerous:
+        path = path.replace(d, "")
+
+    # Normaliza
+    path = normalize_path(path)
+
+    # Verifica se tenta sair do drive
+    if path.startswith("\\\\") or ":" in path[1:]:
+        # UNC path ou segundo drive - permite
+        pass
+
+    return path
+
+
+def safe_join(base: str, *paths: str) -> str:
+    """Join seguro que previne directory traversal."""
+    base = Path(base).resolve()
+    result = base.joinpath(*paths).resolve()
+
+    # Verifica se resultado esta dentro do base
+    try:
+        result.relative_to(base)
+    except ValueError:
+        raise ValueError(f"Path traversal detectado: {result} fora de {base}")
+
+    return str(result)
+
+
+def validate_env_var_name(name: str) -> bool:
+    """Valida nome de variavel de ambiente (regex POSIX)."""
+    import re
+    return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name))
+
+
+def validate_env_var_value(value: str) -> bool:
+    """Valida valor de variavel de ambiente basico."""
+    if not value:
+        return True
+    # Verifica caracteres de controle
+    for c in value:
+        if ord(c) < 32 and c not in "\t\n\r":
+            return False
+    return True
+
+
 def broadcast_environment_change() -> None:
     """Notifica Windows sobre mudança de variáveis de ambiente."""
     try:
