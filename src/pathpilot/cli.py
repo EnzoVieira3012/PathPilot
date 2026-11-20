@@ -586,6 +586,164 @@ def restore(
     print_success(f"Backup '[bold]{backup.name}[/]' restaurado no {sc.label}")
 
 
+# ==================== BACKUP/RESTORE ADVANCED ====================
+
+@app.command()
+def backup_verify(
+    backup_id: int = typer.Argument(None, help="ID do backup (opcional com --all)"),
+    all: bool = typer.Option(False, "--all", "-a", help="Verifica todos"),
+    scope: str = typer.Option(None, "--scope", "-s", help="Escopo: user|system"),
+):
+    """Verifica integridade do backup (checksum SHA-256)"""
+    service = PathService()
+
+    if all:
+        scopes = [Scope.USER, Scope.SYSTEM] if scope is None else [Scope(scope)]
+        for sc in scopes:
+            results = service.verify_all_backups(sc)
+            print_info(f"{sc.label}: {len(results)} backups")
+            for bid, ok in results:
+                status = "[green]OK[/]" if ok else "[red]FALHOU[/]"
+                console.print(f"  Backup #{bid}: {status}")
+    else:
+        if backup_id is None:
+            print_error("Informe backup_id ou use --all")
+            raise typer.Exit(1)
+        ok = service.verify_backup(backup_id)
+        status = "[green]OK[/]" if ok else "[red]FALHOU[/]"
+        console.print(f"Backup #{backup_id}: {status}")
+        if not ok:
+            raise typer.Exit(1)
+
+
+@app.command()
+def restore_merge(
+    backup_id: int = typer.Argument(..., help="ID do backup"),
+    scope: str = typer.Option(None, "--scope", "-s", help="Escopo: user|system"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Simula sem aplicar"),
+):
+    """Restore merge: adiciona paths que faltam (nao remove existentes)"""
+    service = PathService()
+
+    backup = service.backup_repo.get_by_id(backup_id)
+    if not backup:
+        print_error(f"Backup {backup_id} nao encontrado")
+        raise typer.Exit(1)
+
+    sc = Scope(scope) if scope else backup.scope
+
+    if require_admin(sc):
+        print_error("Escopo 'system' requer admin")
+        raise typer.Exit(1)
+
+    result = service.restore_backup_merge(backup_id, sc, dry_run)
+
+    console.print(Panel.fit(
+        f"[bold]Backup:[/] {backup.name}\n"
+        f"[bold]Escopo:[/] {sc.label}\n"
+        f"[bold]Restaurados:[/] [green]{result.restored}[/]\n"
+        f"[bold]Ignorados (ja existem):[/] [yellow]{result.skipped}[/]\n"
+        f"[bold]Falharam:[/] [red]{result.failed}[/]",
+        title="[+] Restore Merge" if not dry_run else "[i] DRY-RUN Restore Merge",
+        border_style="green" if not dry_run else "yellow",
+    ))
+
+    if result.errors:
+        for err in result.errors:
+            print_error(f"  {err}")
+
+    if not dry_run and result.restored > 0:
+        print_success(f"Merge concluido: {result.restored} paths adicionados")
+
+
+@app.command()
+def backup_cleanup(
+    scope: str = typer.Option("both", "--scope", "-s", help="Escopo: user|system|both"),
+    max_backups: int = typer.Option(10, "--max", "-m", help="Maximo de backups para manter"),
+    max_age_days: int = typer.Option(90, "--max-age", "-d", help="Idade maxima em dias"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="So mostra o que removeria"),
+):
+    """Remove backups antigos (mantem mais recentes e remove > idade)"""
+    from datetime import datetime, timedelta
+
+    service = PathService()
+
+    scopes = [Scope.USER, Scope.SYSTEM] if scope == "both" else [Scope(scope)]
+
+    for sc in scopes:
+        if require_admin(sc) and not dry_run:
+            print_error("Escopo 'system' requer admin")
+            continue
+
+        if dry_run:
+            backups = service.backup_repo.list_all(sc, limit=1000)
+            to_remove = []
+            cutoff = datetime.now() - timedelta(days=max_age_days)
+            for b in backups:
+                if b.created_at and b.created_at < cutoff:
+                    to_remove.append(b)
+            if len(backups) > max_backups:
+                to_remove.extend(backups[max_backups:])
+
+            if to_remove:
+                console.print(f"[yellow]Removeria {len(to_remove)} backups em {sc.label}:[/]")
+                for b in to_remove:
+                    console.print(f"  {b.id}: {b.name} ({b.created_at})")
+            else:
+                print_success(f"Nada para remover em {sc.label}")
+        else:
+            removed = service.cleanup_backups(sc, max_backups, max_age_days)
+            print_success(f"Removidos {removed} backups antigos em {sc.label}")
+
+
+@app.command()
+def backup_schedule(
+    enabled: bool = typer.Argument(None, help="Ativar/desativar agendamento"),
+    interval: int = typer.Option(24, "--interval", "-i", help="Intervalo em horas"),
+    scope: str = typer.Option("user", "--scope", "-s", help="Escopo: user|system"),
+    max_backups: int = typer.Option(10, "--max", "-m", help="Maximo de backups para manter"),
+    status: bool = typer.Option(False, "--status", help="So mostra status"),
+):
+    """Configura agendamento automatico de backups"""
+    service = PathService()
+    sc = Scope(scope)
+
+    if status:
+        st = service.get_backup_schedule_status()
+        console.print(Panel.fit(
+            f"[bold]Ativo:[/] {'[green]SIM[/]' if st['enabled'] else '[red]NAO[/]'}\n"
+            f"[bold]Intervalo:[/] {st['interval_hours']}h\n"
+            f"[bold]Escopo:[/] {st['scope']}\n"
+            f"[bold]Max backups:[/] {st['max_backups']}\n"
+            f"[bold]Proximo:[/] {st['next_run'] or 'N/A'}",
+            title="[*] Backup Schedule Status",
+            border_style="cyan",
+        ))
+        return
+
+    if require_admin(sc) and enabled:
+        print_error("Escopo 'system' requer admin para agendar")
+        raise typer.Exit(1)
+
+    service.set_backup_schedule(enabled, interval, sc, max_backups)
+
+    if enabled:
+        print_success(f"Agendamento ativado: a cada {interval}h no {sc.label} (max {max_backups} backups)")
+    else:
+        print_success("Agendamento desativado")
+
+
+@app.command()
+def backup_auto(
+    scope: str = typer.Option("both", "--scope", "-s", help="Escopo: user|system|both"),
+    enable: bool = typer.Option(True, "--enable/--disable", help="Ativar/desativar auto-backup"),
+):
+    """Ativa/desativa auto-backup antes de operacoes destrutivas"""
+    from .config import settings
+    settings.auto_backup = enable
+    print_success(f"Auto-backup {'ativado' if enable else 'desativado'}")
+
+
 @app.command()
 def history(
     limit: int = typer.Option(20, "--limit", "-n", help="Numero de entradas"),

@@ -74,6 +74,7 @@ class Backup:
     scope: Scope = Scope.USER
     path_snapshot: list[str] = None
     description: str = ''
+    checksum: str = ''
     created_at: datetime | None = None
 
     def __post_init__(self):

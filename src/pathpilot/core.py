@@ -2,12 +2,17 @@
 
 import csv
 import json
+import sched
+import threading
+import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from .models import OperationStatus, OperationType, PathEntry, Scope, SyncResult, ValidationResult
+from .config import settings
+from .models import Backup, OperationStatus, OperationType, PathEntry, Scope, SyncResult, ValidationResult
 from .repositories import BackupRepository, OperationLogRepository, PathEntryRepository
-from .utils import expand_path, is_valid_path, normalize_path, path_exists, print_warning
+from .utils import expand_path, is_valid_path, normalize_path, path_exists, print_info, print_warning
 from .windows_api import WindowsPathAPI
 
 
@@ -43,6 +48,237 @@ class SyncConflict:
     resolution: str = "keep_db"  # keep_db, keep_windows, keep_both
 
 
+@dataclass
+class RestoreResult:
+    restored: int
+    skipped: int
+    failed: int
+    errors: list[str]
+
+
+@dataclass
+class BackupSchedule:
+    enabled: bool = False
+    interval_hours: int = 24
+    scope: Scope = Scope.USER
+    max_backups: int = 10
+    next_run: datetime | None = None
+
+
+class BackupService:
+    """Servico de backup/restore avancado."""
+
+    def __init__(self, path_service: "PathService"):
+        self.path_service = path_service
+        self.backup_repo = BackupRepository()
+        self.path_repo = PathEntryRepository()
+        self.win_api = WindowsPathAPI()
+        self._scheduler: sched.scheduler | None = None
+        self._scheduler_thread: threading.Thread | None = None
+        self._running = False
+        self._schedule = BackupSchedule()
+
+    # ==================== AUTO-BACKUP HOOKS ====================
+
+    def auto_backup_before_change(self, scope: Scope, operation: str, description: str = "") -> Backup:
+        """Cria backup automatico antes de mudanca destrutiva."""
+        if not self.path_service.path_repo.get_all(scope, active_only=True):
+            return None
+
+        name = f"auto-{operation}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        paths = self.win_api.get_path(scope)
+        backup = Backup(
+            name=name,
+            scope=scope,
+            path_snapshot=paths,
+            description=f"Auto-backup antes de {operation}: {description}",
+        )
+        created = self.backup_repo.create(backup)
+
+        # Log da operacao de auto-backup
+        from .models import OperationLog, OperationStatus, OperationType
+        log = OperationLog(
+            operation=OperationType.BACKUP,
+            scope=scope,
+            target_path="",
+            status=OperationStatus.SUCCESS,
+            metadata={"auto": True, "trigger": operation, "backup_id": created.id},
+        )
+        self.path_service.log_repo.log(log)
+
+        return created
+
+    # ==================== MERGE RESTORE ====================
+
+    def restore_merge(self, backup_id: int, scope: Scope, dry_run: bool = False) -> RestoreResult:
+        """Restore merge: adiciona paths do backup que faltam, nao remove existentes."""
+        backup = self.backup_repo.get_by_id(backup_id)
+        if not backup:
+            return RestoreResult(0, 0, 1, [f"Backup {backup_id} nao encontrado"])
+
+        result = RestoreResult(restored=0, skipped=0, failed=0, errors=[])
+        current_paths = {normalize_path(p) for p in self.win_api.get_path(scope)}
+        backup_paths = [normalize_path(p) for p in backup.path_snapshot]
+
+        if dry_run:
+            for p in backup_paths:
+                if p not in current_paths:
+                    result.restored += 1
+                else:
+                    result.skipped += 1
+            return result
+
+        for p in backup_paths:
+            if p not in current_paths:
+                op_result = self.path_service.add_path(p, scope, f"Restored from {backup.name}")
+                if op_result.success:
+                    result.restored += 1
+                else:
+                    result.failed += 1
+                    result.errors.append(f"{p}: {op_result.message}")
+            else:
+                result.skipped += 1
+
+        return result
+
+    def restore_full(self, backup_id: int, scope: Scope, dry_run: bool = False) -> RestoreResult:
+        """Restore full: substitui PATH atual pelo backup."""
+        backup = self.backup_repo.get_by_id(backup_id)
+        if not backup:
+            return RestoreResult(0, 0, 1, [f"Backup {backup_id} nao encontrado"])
+
+        result = RestoreResult(restored=0, skipped=0, failed=0, errors=[])
+
+        if dry_run:
+            result.restored = len(backup.path_snapshot)
+            return result
+
+        # Aplica no Windows
+        self.win_api.set_path(scope, backup.path_snapshot)
+
+        # Atualiza DB
+        for idx, p in enumerate(backup.path_snapshot):
+            entry = self.path_repo.get_by_path(p, scope)
+            if entry:
+                entry.active = True
+                entry.position = idx
+                self.path_repo.update(entry)
+            else:
+                self.path_repo.create(PathEntry(path=p, scope=scope, active=True, position=idx))
+
+        # Desativa paths que estavam ativos mas nao estao no backup
+        current_active = self.path_repo.get_all(scope, active_only=True)
+        backup_set = {normalize_path(p) for p in backup.path_snapshot}
+        for entry in current_active:
+            if normalize_path(entry.path) not in backup_set:
+                self.path_repo.set_active(entry.path, scope, False)
+
+        result.restored = len(backup.path_snapshot)
+        return result
+
+    # ==================== INTEGRITY CHECK ====================
+
+    def verify_backup(self, backup_id: int) -> bool:
+        """Verifica integridade do backup (checksum SHA-256)."""
+        return self.backup_repo.verify_integrity(backup_id)
+
+    def verify_all_backups(self, scope: Scope = None) -> list[tuple[int, bool]]:
+        """Verifica todos os backups."""
+        backups = self.backup_repo.list_all(scope)
+        return [(b.id, self.backup_repo.verify_integrity(b.id)) for b in backups]
+
+    # ==================== CLEANUP ====================
+
+    def cleanup_old_backups(self, scope: Scope = None, max_backups: int = 10, max_age_days: int = 90) -> int:
+        """Remove backups antigos (mantem mais recentes ate max_backups, remove > max_age_days)."""
+        backups = self.backup_repo.list_all(scope, limit=1000)
+        removed = 0
+
+        # Remove por idade
+        cutoff = datetime.now() - timedelta(days=max_age_days)
+        for backup in backups:
+            if backup.created_at and backup.created_at < cutoff:
+                self.backup_repo.delete(backup.id)
+                removed += 1
+
+        # Remove excedentes (mantem mais recentes)
+        remaining = self.backup_repo.list_all(scope, limit=1000)
+        if len(remaining) > max_backups:
+            for backup in remaining[max_backups:]:
+                self.backup_repo.delete(backup.id)
+                removed += 1
+
+        return removed
+
+    # ==================== SCHEDULER ====================
+
+    def set_schedule(self, enabled: bool, interval_hours: int = 24, scope: Scope = Scope.USER, max_backups: int = 10):
+        """Configura agendamento automatico de backups."""
+        self._schedule = BackupSchedule(
+            enabled=enabled,
+            interval_hours=interval_hours,
+            scope=scope,
+            max_backups=max_backups,
+            next_run=datetime.now() + timedelta(hours=interval_hours) if enabled else None,
+        )
+
+        if enabled:
+            self._start_scheduler()
+        else:
+            self._stop_scheduler()
+
+    def _start_scheduler(self):
+        if self._running:
+            return
+        self._running = True
+        self._scheduler = sched.scheduler(time.time, time.sleep)
+        self._scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
+        self._scheduler_thread.start()
+        print_info(f"Scheduler de backup iniciado (intervalo: {self._schedule.interval_hours}h)")
+
+    def _stop_scheduler(self):
+        self._running = False
+        if self._scheduler_thread and self._scheduler_thread.is_alive():
+            self._scheduler_thread.join(timeout=5)
+        print_info("Scheduler de backup parado")
+
+    def _run_scheduler(self):
+        while self._running:
+            now = datetime.now()
+            if self._schedule.next_run and now >= self._schedule.next_run:
+                try:
+                    self._run_scheduled_backup()
+                except Exception as e:
+                    print_warning(f"Backup agendado falhou: {e}")
+                # Agenda proximo
+                self._schedule.next_run = now + timedelta(hours=self._schedule.interval_hours)
+            time.sleep(60)  # Checa a cada minuto
+
+    def _run_scheduled_backup(self):
+        name = f"scheduled-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        paths = self.win_api.get_path(self._schedule.scope)
+        backup = Backup(
+            name=name,
+            scope=self._schedule.scope,
+            path_snapshot=paths,
+            description="Backup agendado automatico",
+        )
+        self.backup_repo.create(backup)
+        print_info(f"Backup agendado criado: {name} ({len(paths)} paths)")
+
+        # Cleanup apos backup
+        self.cleanup_old_backups(self._schedule.scope, self._schedule.max_backups)
+
+    def get_schedule_status(self) -> dict:
+        return {
+            "enabled": self._schedule.enabled,
+            "interval_hours": self._schedule.interval_hours,
+            "scope": self._schedule.scope.value,
+            "max_backups": self._schedule.max_backups,
+            "next_run": self._schedule.next_run.isoformat() if self._schedule.next_run else None,
+        }
+
+
 class PathService:
     """Servico de operacoes no PATH."""
 
@@ -51,9 +287,47 @@ class PathService:
         self.backup_repo = BackupRepository()
         self.log_repo = OperationLogRepository()
         self.win_api = WindowsPathAPI()
+        self.backup_service = BackupService(self)
 
     def list_paths(self, scope: Scope, active_only: bool = True) -> list[PathEntry]:
         return self.path_repo.get_all(scope, active_only)
+
+    # ==================== BACKUP DELEGATION ====================
+
+    def create_backup(self, name: str, scope: Scope, description: str = "") -> Backup:
+        """Cria backup manual."""
+        paths = self.win_api.get_path(scope)
+        backup = Backup(name=name, scope=scope, path_snapshot=paths, description=description)
+        return self.backup_repo.create(backup)
+
+    def restore_backup_merge(self, backup_id: int, scope: Scope, dry_run: bool = False) -> RestoreResult:
+        """Restore merge: adiciona paths que faltam."""
+        return self.backup_service.restore_merge(backup_id, scope, dry_run)
+
+    def restore_backup_full(self, backup_id: int, scope: Scope, dry_run: bool = False) -> RestoreResult:
+        """Restore full: substitui PATH atual."""
+        return self.backup_service.restore_full(backup_id, scope, dry_run)
+
+    def verify_backup(self, backup_id: int) -> bool:
+        return self.backup_service.verify_backup(backup_id)
+
+    def verify_all_backups(self, scope: Scope = None) -> list[tuple[int, bool]]:
+        return self.backup_service.verify_all_backups(scope)
+
+    def cleanup_backups(self, scope: Scope = None, max_backups: int = 10, max_age_days: int = 90) -> int:
+        return self.backup_service.cleanup_old_backups(scope, max_backups, max_age_days)
+
+    def set_backup_schedule(self, enabled: bool, interval_hours: int = 24, scope: Scope = Scope.USER, max_backups: int = 10):
+        self.backup_service.set_schedule(enabled, interval_hours, scope, max_backups)
+
+    def get_backup_schedule_status(self) -> dict:
+        return self.backup_service.get_schedule_status()
+
+    def _auto_backup_if_enabled(self, scope: Scope, operation: str, description: str = ""):
+        """Hook para auto-backup antes de operacoes destrutivas."""
+        if settings.auto_backup:
+            return self.backup_service.auto_backup_before_change(scope, operation, description)
+        return None
 
     def add_path(self, path: str, scope: Scope, description: str = "") -> OperationResult:
         path = normalize_path(path)
@@ -99,6 +373,9 @@ class PathService:
 
         if not existing.active:
             return OperationResult(False, f"Path ja esta inativo: {path}")
+
+        # Auto-backup antes de remover
+        self._auto_backup_if_enabled(scope, "remove_path", path)
 
         self.path_repo.set_active(path, scope, False)
         self._sync_to_windows(scope)
