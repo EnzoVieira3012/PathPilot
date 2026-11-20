@@ -1,94 +1,187 @@
 # PathPilot
 
-Sistema Python para gerenciar variáveis de ambiente e paths no Windows de forma prática e padronizada.
+🎯 **PathPilot** - Gerencie seu PATH do Windows com estilo.
 
-## Sobre
+CLI moderna construída com **Typer + Rich + Questionary** para gerenciar variáveis de ambiente e PATH no Windows com banco de dados SQLite, migrações versionadas, backup/restore e interface bonita no terminal.
 
-PathPilot é uma ferramenta CLI que permite registrar, listar e gerenciar variáveis de ambiente (especialmente o PATH) no Windows de forma organizada, seguindo boas práticas de mercado.
+## ✨ Funcionalidades
 
-## Funcionalidades
+### PATH Management
+- `list` - Lista paths (table/tree/json) por escopo (user/system/both)
+- `add` - Adiciona path com validação, descrição, modo interativo
+- `remove` - Remove/desativa path com confirmação
+- `validate` - Verifica existência no disco, duplicados, inválidos (`--fix` limpa automático)
+- `sync` - Sincroniza DB ↔ Windows real, detecta drift
 
-- ✅ Adicionar paths ao PATH do sistema/usuário
-- ✅ Remover paths do PATH
-- ✅ Listar paths atuais
-- ✅ Backup e restore do PATH
-- ✅ Validação de paths duplicados
-- ✅ Interface de linha de comando intuitiva
+### Backup & Restore
+- `backup` - Snapshot do PATH atual com checksum SHA-256
+- `restore` - Restaura backup (com `--dry-run` para simular)
+- `history` - Log de operações (últimas 20 por padrão)
 
-## Instalação
+### Database & Migrations
+- `migrate` - Executa migrações pendentes (`--status` mostra estado, `--version N` target específico)
+- `db-stats` - Estatísticas do banco + health check
+- SQLite com WAL mode, thread-local connections
+- 5 migrações versionadas + seed paths padrão Windows
+
+### Interface
+- `interactive` - Menu completo com Questionary (setas, seleção, confirmação)
+- Output Rich: tables coloridas, panels, trees, progress bars
+- Prompts interativos bonitos
+
+## 🚀 Instalação
 
 ```bash
-# Clone o repositório
-git clone <url-do-repo>
+# Clone
+git clone https://github.com/EnzoVieira3012/PathPilot.git
 cd PathPilot
 
-# Crie ambiente virtual
-python -m venv venv
-venv\Scripts\activate
+# Instala dependências
+pip install -e .
 
-# Instale dependências
-pip install -r requirements.txt
+# Ou modo desenvolvimento
+pip install -e ".[dev]"
 ```
 
-## Configuração
+## ⚙️ Configuração
 
-1. Copie `.env.example` para `.env`
-2. Ajuste as variáveis conforme necessário
+Copie `.env.example` para `.env` e ajuste:
 
-## Uso
+```env
+DB_PATH=C:\Users\<USER>\.pathpilot\pathpilot.db
+FERNET_KEY=              # Gere com: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+DEFAULT_SCOPE=user
+AUTO_BACKUP=true
+CONFIRM_DESTRUCTIVE=true
+```
+
+## 📖 Uso
 
 ```bash
-# Ver ajuda
-python -m pathpilot --help
+# Help
+pathpilot --help
+pathpilot <comando> --help
 
-# Listar paths atuais
-python -m pathpilot list
+# PATH
+pathpilot list                    # Ambos escopos, table
+pathpilot list --scope user --format tree
+pathpilot list --format json
 
-# Adicionar path
-python -m pathpilot add "C:\Meu\Path"
+pathpilot add "C:\Tools" --scope user --desc "Minhas ferramentas"
+pathpilot add "C:\Program Files\Git\bin" --scope system --interactive
 
-# Remover path
-python -m pathpilot remove "C:\Meu\Path"
+pathpilot remove "C:\OldPath" --scope user
+pathpilot remove "C:\OldPath" --scope user --force  # Sem confirmação
 
-# Backup do PATH atual
-python -m pathpilot backup
+pathpilot validate                # Checka ambos escopos
+pathpilot validate --scope system --fix  # Remove inválidos auto
 
-# Restaurar backup
-python -m pathpilot restore
+pathpilot sync                    # Sync DB ↔ Windows (detecta drift)
+pathpilot sync --dry-run          # Só mostra o que faria
+
+# Backup/Restore
+pathpilot backup "antes-update" --scope user --desc "Backup antes do update"
+pathpilot restore 1               # Restaura backup ID 1
+pathpilot restore 1 --dry-run     # Simula
+pathpilot restore 1 --scope system  # Força escopo
+
+# Histórico
+pathpilot history                 # Últimas 20
+pathpilot history -n 50 --scope user
+
+# Database
+pathpilot migrate --status        # Status migrações
+pathpilot migrate                 # Roda pendentes
+pathpilot migrate --version 3     # Até versão 3
+pathpilot db-stats                # Stats + health check
+
+# Interativo
+pathpilot interactive
 ```
 
-## Estrutura do Projeto
+## 🏗️ Arquitetura
 
 ```
-PathPilot/
-├── src/
-│   └── pathpilot/
-│       ├── __init__.py
-│       ├── cli.py
-│       ├── core.py
-│       └── utils.py
-├── tests/
-├── .gitignore
-├── .env
-├── .env.example
-├── README.md
-├── requirements.txt
-└── pyproject.toml
+src/pathpilot/
+├── cli.py           # Typer + Rich + Questionary commands
+├── core.py          # PathService - lógica de negócio
+├── models.py        # Dataclasses/Pydantic (Scope, PathEntry, Backup, etc)
+├── db.py            # Database singleton, WAL, thread-local, health check
+├── migrations.py    # Sistema migrações versionadas (5 migrações)
+├── repositories.py  # Repository Pattern (PathEntry, EnvVar, Backup, Log, Settings)
+├── windows_api.py   # winreg wrapper (user/system PATH)
+├── config.py        # pydantic-settings (.env)
+├── utils.py         # Helpers (normalize, admin check, console prints)
+└── __main__.py      # Entry point python -m pathpilot
 ```
 
-## Desenvolvimento
+### Migrações
+| Versão | Descrição |
+|--------|-----------|
+| 1 | Schema inicial: env_vars, path_entries, backups, operation_log |
+| 2 | Coluna `checksum` em backups (SHA-256) |
+| 3 | Índices compostos performance |
+| 4 | Tabela `user_settings` |
+| 5 | Seed: paths padrão Windows (user + system) |
+
+### Banco de Dados
+- **SQLite** em `~/.pathpilot/pathpilot.db`
+- **WAL mode** para concorrência
+- **Thread-local connections** (seguro para CLI)
+- **Foreign keys** ativas
+- **Checksum SHA-256** nos backups para integridade
+
+## 🧪 Desenvolvimento
 
 ```bash
-# Rodar testes
-pytest
-
-# Linting
+# Lint + format
 ruff check .
-
-# Formatação
 ruff format .
+
+# Type check
+mypy src/
+
+# Testes
+pytest -v
+pytest --cov=src/pathpilot
+
+# Pre-commit
+pre-commit install
 ```
 
-## Licença
+## 📦 Dependências Principais
 
-MIT License - veja [LICENSE](LICENSE) para detalhes.
+| Pacote | Uso |
+|--------|-----|
+| `typer` | CLI framework moderno |
+| `rich` | Output bonito (tables, panels, trees, progress) |
+| `questionary` | Prompts interativos |
+| `pydantic` + `pydantic-settings` | Validação + config |
+| `cryptography` | Fernet encryption (env vars sensíveis) |
+| `pytest` + `ruff` + `mypy` | Dev tooling |
+
+## 🔐 Segurança
+
+- Validação de input (path traversal, injection)
+- Confirmação interativa para operações destrutivas
+- Chave Fernet em `.env` (nunca no código)
+- Checksum SHA-256 verifica integridade de backups
+- Scope `system` requer execução como Administrador
+
+## 🗺️ Roadmap
+
+- [x] `feat/core-cli` - CLI base + comandos essenciais
+- [x] `feat/database` - SQLite + migrations + seeds + repositories
+- [ ] `feat/path-operations` - Reorder, bulk ops, import/export
+- [ ] `feat/backup-restore` - Auto-backup hooks, merge restore, agendamento
+- [ ] `feat/security` - Fernet encrypt env vars, audit log assinado
+- [ ] `feat/tests` - Unit + integration tests (>80% coverage)
+- [ ] `feat/polish` - CI/CD, packaging, docs completas
+
+## 📄 Licença
+
+MIT - veja [LICENSE](LICENSE)
+
+---
+
+**Feito com 💻 no Windows**
