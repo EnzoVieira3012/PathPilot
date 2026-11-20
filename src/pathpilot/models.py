@@ -33,6 +33,7 @@ class OperationType(str, Enum):
     RESTORE = 'restore'
     VALIDATE = 'validate'
     SYNC = 'sync'
+    REORDER = 'reorder'
 
 
 @dataclass
